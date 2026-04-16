@@ -6,7 +6,7 @@
 [![Ruff](https://img.shields.io/badge/linter-ruff-orange)](https://docs.astral.sh/ruff/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A **production-grade REST API** for real-time PPE helmet detection powered by a fine-tuned **YOLOv8m ONNX** model. Built to MLOps standards with structured GCP logging, per-IP rate limiting, tenacity-backed inference retries, and strict Pydantic V2 schemas throughout.
+A **production-grade REST API** for real-time PPE helmet detection powered by a fine-tuned **YOLOv8m** model. Built to MLOps standards with structured JSON logging, per-IP rate limiting, tenacity-backed inference retries, and strict Pydantic V2 schemas throughout.
 
 ---
 
@@ -14,15 +14,15 @@ A **production-grade REST API** for real-time PPE helmet detection powered by a 
 
 | Capability | Implementation |
 |---|---|
-| Object Detection | YOLOv8m via `ultralytics` (ONNX runtime) |
+| Object Detection | YOLOv8m via `ultralytics` |
 | Zero cold-start | Model loaded once at startup via FastAPI `lifespan` |
 | Rate Limiting | `slowapi` — 60 requests/min per IP on `/predict` |
-| Structured Logging | Google Cloud Logging (stdlib JSON fallback) |
+| Structured Logging | JSON Lines (stdout + `app.log`) |
 | Resilient Inference | `tenacity` exponential back-off retries |
 | Strict Validation | Pydantic V2 schemas for all endpoints |
 | Static Typing | Full `mypy`/`ruff` compatible type annotations |
 | Code Quality | Ruff linting + formatting (`pyproject.toml`) |
-| Testing | `pytest-asyncio` + `httpx` ASGI client (no GPU needed) |
+| Testing | `pytest` + `httpx` ASGI client (mocked inference) |
 
 ---
 
@@ -38,15 +38,16 @@ cv_api/
 │       └── predict.py       # POST /predict  (rate-limited)
 ├── core/
 │   ├── config.py            # Pydantic BaseSettings — env-driven config
-│   ├── logging.py           # GCP Cloud Logging / JSON stdout setup
+│   ├── logging.py           # Structured JSON logging factory
 │   ├── exceptions.py        # Custom exception types + FastAPI handlers
-│   └── dependencies.py      # DI helpers: InferenceService holder, upload guard
+│   └── dependencies.py      # DI: InferenceService holder, upload validator
 ├── services/
 │   └── ml_service.py        # InferenceService: decode → predict → format
 ├── tests/
 │   └── test_api.py          # Integration tests (mocked InferenceService)
 ├── pyproject.toml           # Ruff + pytest configuration
 ├── requirements.txt
+├── best.pt                  # Fine-tuned YOLOv8m weights (~50 MB)
 └── .env.example
 ```
 
@@ -56,8 +57,8 @@ cv_api/
 
 ### 1. Prerequisites
 
-- Python **3.11+**
-- Your exported model file: `best.onnx` (place in the project root, or update `MODEL_PATH` in `.env`)
+- Python **3.12.x**
+- Your fine-tuned model file: `best.pt` (place in the project root)
 
 ### 2. Install dependencies
 
@@ -76,18 +77,17 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# Edit .env — at minimum set MODEL_PATH
+# Edit .env if needed (defaults are production-ready)
 ```
 
 Key variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `MODEL_PATH` | `best.onnx` | Path to the ONNX model file |
-| `MODEL_DEVICE` | `cpu` | `cpu` \| `cuda:0` |
+| `MODEL_PATH` | `best.pt` | Path to the YOLO weights file |
+| `MODEL_DEVICE` | `cpu` | `cpu` | `cuda:0` |
 | `MODEL_CONFIDENCE_THRESHOLD` | `0.25` | Min detection confidence |
 | `RATE_LIMIT_PREDICT` | `60/minute` | slowapi limit string |
-| `GCP_PROJECT_ID` | *(empty)* | Set to enable Cloud Logging |
 | `MAX_UPLOAD_SIZE_BYTES` | `10485760` | 10 MB upload cap |
 
 ### 4. Run the server
@@ -123,13 +123,13 @@ Returns service liveness and whether the model is loaded.
 
 Accepts a single image upload and returns detected helmets.
 
-**Rate limit**: 60 requests/minute per client IP.
+**Rate limit**: 60 requests/minute per client IP (configurable).
 
 **Request** — `multipart/form-data`
 
 | Field | Type | Description |
 |---|---|---|
-| `file` | `UploadFile` | JPEG, PNG, BMP, or WEBP image |
+| `file` | `UploadFile` | JPEG, PNG, BMP, or WEBP image (≤10 MB) |
 
 **Response `200 OK`**
 ```json
@@ -156,58 +156,40 @@ Accepts a single image upload and returns detected helmets.
 | `429` | `rate_limit_exceeded` | Too many requests from this IP |
 | `500` | `ml_processing_error` | Inference failed after all retries |
 
-**Example — curl**
-```bash
-curl -X POST http://localhost:8000/predict \
-  -F "file=@/path/to/construction_site.jpg"
-```
-
-**Example — Python `requests`**
-```python
-import requests
-
-with open("construction_site.jpg", "rb") as f:
-    response = requests.post(
-        "http://localhost:8000/predict",
-        files={"file": ("construction_site.jpg", f, "image/jpeg")},
-    )
-print(response.json())
-```
-
 ---
 
 ## 🏗️ Architecture Deep-Dive
 
 ### Lifespan Model Loading
 
-The YOLO model is loaded **once** at server boot via FastAPI's `lifespan` context manager. This eliminates cold-start latency on the first request and ensures clean teardown on shutdown.
+The YOLO model is loaded **once** at server boot via FastAPI's `lifespan` context manager. A warm-up forward pass is executed to initialise CUDA/CPU graphs.
 
 ```
 Server Start
     └─ lifespan.__aenter__
         └─ InferenceService.load()
-            ├─ YOLO("best.onnx")   ← loads ONNX into memory
-            └─ warm-up prediction  ← initialises CUDA/ONNX graphs
+            ├─ YOLO("best.pt")      ← loads weights into memory
+            └─ warm-up prediction   ← initialises compute graphs
 ```
 
 ### Decoupled Inference Service
 
-Route handlers **never** contain ML logic. The `InferenceService` class in `services/ml_service.py` owns the full pipeline:
+Route handlers are decoupled from ML logic. The `InferenceService` owns the full pipeline:
 
 ```
 POST /predict
-  └─ validate_upload_size (DI)     ← FileSizeExceededError if too large
-  └─ get_inference_service (DI)    ← returns the warm singleton
+  └─ validate_upload_size (DI)     ← FileSizeExceededError if > 10MB
+  └─ get_inference_service (DI)    ← returns singleton service
   └─ predict route handler
       └─ InferenceService.predict()
-          ├─ _decode_image()       ← cv2.imdecode → InvalidImageError
+          ├─ _decode_image()       ← cv2.imdecode → np.ndarray
           └─ _run_inference()      ← @retry(tenacity) → MLProcessingError
-              └─ _format_results() ← bbox / confidence / class_name dicts
+              └─ _format_results() ← round metrics & map class labels
 ```
 
 ### Retry Strategy
 
-`tenacity` wraps `_run_inference` with exponential back-off:
+`tenacity` wraps inference with exponential back-off to handle transient resource contention:
 
 ```python
 @retry(
@@ -217,59 +199,33 @@ POST /predict
 )
 ```
 
-This handles transient CUDA OOM spikes and I/O lock contention without returning errors to the client.
+### Observability
 
-### Logging
-
-Every log call uses the `extra={}` parameter to attach structured context:
+Logs are emitted as JSON Lines for easy ingestion and querying:
 
 ```python
-logger.info("Prediction response dispatched.", extra={
-    "filename": "site_a.jpg",
-    "file_size_bytes": 204800,
+logger.info("Prediction complete.", extra={
     "latency_ms": 34.21,
     "num_detections": 2,
-})
-
-logger.error("Inference failed.", exc_info=True, extra={
-    "image_shape": (1080, 1920, 3),
+    "file_size": 204800,
 })
 ```
 
-When `GCP_PROJECT_ID` is set, these log records are shipped to **Google Cloud Logging** as structured JSON entries and are queryable via Log Explorer.
+When deployed to GCP, these structured logs are automatically indexed by **Cloud Logging**.
 
 ---
 
-## 🧪 Running Tests
-
-Tests use a **mocked InferenceService** — no real model or GPU required.
+## 🧪 Testing
 
 ```bash
 pytest -v tests/
 ```
 
-The test suite covers:
-- Health endpoint schema validation
-- Successful prediction response schema
-- Invalid image → `422` response
-- Missing file → `422` response
+The test suite uses a **mocked InferenceService**, allowing for rapid CI validation without requiring a GPU or large model files in the test environment.
 
 ---
 
-## 🐳 Docker (optional)
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
+## 🐳 Docker
 
 ```bash
 docker build -t helmet-detection-api .

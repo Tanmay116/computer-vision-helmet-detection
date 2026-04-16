@@ -63,6 +63,6 @@ htmlcov/
 .ruff_cache/
 
 # Dev files
-api_hit.ipynb
+# api_hit.ipynb allowing for this repo
 my_testing.ipynb
 *.pdf
