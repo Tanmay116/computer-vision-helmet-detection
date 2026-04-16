@@ -39,7 +39,7 @@ class InferenceService:
     def __init__(self) -> None:
         self._model: YOLO | None = None
 
-    # ── Lifecycle ─────────────────────────────────────────────────────────────
+    # Lifecycle
 
     def load(self) -> None:
         """
@@ -69,7 +69,7 @@ class InferenceService:
         self._model = None
         logger.info("YOLO model unloaded.")
 
-    # ── Public API ────────────────────────────────────────────────────────────
+    # Public API
 
     async def predict(self, image_bytes: bytes) -> dict[str, Any]:
         """
@@ -92,7 +92,7 @@ class InferenceService:
             "detections": detections,
         }
 
-    # ── Private Helpers ───────────────────────────────────────────────────────
+    # Private Helpers
 
     @staticmethod
     def _decode_image(image_bytes: bytes) -> np.ndarray:

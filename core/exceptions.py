@@ -12,7 +12,7 @@ from core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# ── Domain Exceptions ─────────────────────────────────────────────────────────
+# Domain Exceptions
 
 
 class InvalidImageError(ValueError):
@@ -39,7 +39,7 @@ class FileSizeExceededError(ValueError):
         super().__init__(self.detail)
 
 
-# ── FastAPI Exception Handlers ────────────────────────────────────────────────
+# FastAPI Exception Handlers
 
 
 async def invalid_image_handler(request: Request, exc: InvalidImageError) -> JSONResponse:

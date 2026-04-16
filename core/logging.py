@@ -21,7 +21,6 @@ class StructuredFormatter(logging.Formatter):
             "function": record.funcName,
         }
 
-        # Extra Fields (e.g., logger.info(..., extra={"user_id": 123}))
         standard_attributes = {
             "args",
             "asctime",

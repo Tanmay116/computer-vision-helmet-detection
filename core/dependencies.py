@@ -8,7 +8,7 @@ from core.config import settings
 from core.exceptions import FileSizeExceededError
 from services.ml_service import InferenceService
 
-# ── Global model holder (populated by lifespan) ───────────────────────────────
+# Global model holder (populated by lifespan)
 # This avoids the overhead of reconstructing InferenceService on every request.
 # The lifespan context manager in main.py is responsible for setting this.
 

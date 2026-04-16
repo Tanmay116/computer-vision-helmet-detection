@@ -14,12 +14,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # ── Application ────────────────────────────────────────────────────────────
+    # Application
     app_name: str = Field(default="Helmet Detection API", description="Human-readable service name.")
     app_version: str = Field(default="1.0.0", description="Semantic version string.")
     debug: bool = Field(default=False, description="Enable debug mode (never True in production).")
 
-    # ── Model ──────────────────────────────────────────────────────────────────
+    # Model
     model_path: str = Field(default="best.pt", description="Path to the exported pt model file.")
     model_confidence_threshold: float = Field(
         default=0.25,
@@ -38,20 +38,20 @@ class Settings(BaseSettings):
         description="Inference device: 'cpu', 'cuda:0', etc.",
     )
 
-    # ── Rate Limiting ──────────────────────────────────────────────────────────
+    # Rate Limiting
     rate_limit_predict: str = Field(
         default="60/minute",
         description="slowapi rate-limit string for POST /predict.",
     )
 
-    # ── Google Cloud Logging ───────────────────────────────────────────────────
+    # Google Cloud Logging
     gcp_project_id: str = Field(
         default="",
         description="GCP project ID for Cloud Logging. Empty → stdlib fallback.",
     )
     log_name: str = Field(default="helmet-detection-api", description="Cloud Logging log name.")
 
-    # ── Local Logging ──────────────────────────────────────────────────────────
+    # Local Logging
     log_level: str = Field(
         default="INFO",
         description="Logging level: DEBUG | INFO | WARNING | ERROR.",
@@ -61,12 +61,12 @@ class Settings(BaseSettings):
         description="Path to the .log file written alongside the app (relative to CWD).",
     )
 
-    # ── Inference Retry ────────────────────────────────────────────────────────
+    # Inference Retry
     retry_max_attempts: int = Field(default=3, ge=1, description="Maximum tenacity retry attempts.")
     retry_wait_min_seconds: float = Field(default=0.5, ge=0.0, description="Minimum back-off seconds.")
     retry_wait_max_seconds: float = Field(default=4.0, ge=0.0, description="Maximum back-off seconds.")
 
-    # ── File Upload ────────────────────────────────────────────────────────────
+    # File Upload
     max_upload_size_bytes: int = Field(
         default=10 * 1024 * 1024,  # 10 MB
         description="Maximum allowed upload size in bytes.",

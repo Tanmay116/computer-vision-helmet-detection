@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from main import app
 
 
-# ── Fixtures ──────────────────────────────────────────────────────────────────
+# Fixtures
 
 
 @pytest.fixture()
@@ -54,7 +54,7 @@ def client(mock_inference_service: MagicMock) -> TestClient:
     app.dependency_overrides.clear()
 
 
-# ── Minimal valid JPEG (1×1 pixel) for upload tests ───────────────────────────
+# Minimal valid JPEG (1×1 pixel) for upload tests
 TINY_JPEG: bytes = (
     b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
     b"\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t"
@@ -67,7 +67,7 @@ TINY_JPEG: bytes = (
 )
 
 
-# ── Health Tests ──────────────────────────────────────────────────────────────
+# Health Tests
 
 
 class TestHealthEndpoint:
@@ -82,7 +82,7 @@ class TestHealthEndpoint:
         assert isinstance(data["model_loaded"], bool)
 
 
-# ── Predict Tests ─────────────────────────────────────────────────────────────
+# Predict Tests
 
 
 class TestPredictEndpoint:
